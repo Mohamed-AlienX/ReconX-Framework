@@ -59,27 +59,27 @@ Built with a **"broad → filter → deep"** philosophy, ReconX minimizes false 
 
 ```
 ┌─────────────────────────────────────────────────────────────────────────────┐
-│                         ReconX Framework v2.0                                │
-│                    8-Phase Automated Recon Pipeline                          │
+│                         ReconX Framework v2.0                               │
+│                    8-Phase Automated Recon Pipeline                         │
 ├─────────────────────────────────────────────────────────────────────────────┤
 │                                                                             │
-│  ┌──────────┐    ┌──────────┐    ┌──────────┐    ┌──────────┐              │
-│  │ Phase 1  │───▶│ Phase 2  │───▶│ Phase 3  │───▶│ Phase 4  │              │
-│  │ Subdomain│    │ Live Host│    │ Network  │    │ Tech     │              │
-│  │ Enum     │    │ Detection│    │ Scanning │    │ Detection│              │
-│  └──────────┘    └──────────┘    └──────────┘    └──────────┘              │
-│       │               │               │               │                      │
-│       ▼               ▼               ▼               ▼                      │
-│  ┌──────────┐    ┌──────────┐    ┌──────────┐    ┌──────────┐          │
-│  │ Phase 5  │───▶│ Phase 6  │───▶│ Phase 7  │───▶│ Phase 8  │          │
-│  │ URL      │    │ Parameter│    │ JS &     │    │ Vuln     │          │
-│  │ Collection│   │ Analysis │    │ Secrets  │    │ Scanning │          │
-│  └──────────┘    └──────────┘    └──────────┘    └──────────┘          │
+│  ┌──────────┐    ┌──────────┐    ┌──────────┐    ┌──────────┐               │
+│  │ Phase 1  │───▶│ Phase 2  │───▶│ Phase 3  │───▶│ Phase 4  │             |
+│  │ Subdomain│    │ Live Host│    │ Network  │    │ Tech     │               │
+│  │ Enum     │    │ Detection│    │ Scanning │    │ Detection│               │
+│  └──────────┘    └──────────┘    └──────────┘    └──────────┘               |
+│       │               │               │               │                     |
+│       ▼               ▼               ▼               ▼                     |
+│  ┌──────────┐    ┌──────────┐    ┌──────────┐    ┌──────────┐               |
+│  │ Phase 5  │───▶│ Phase 6  │───▶│ Phase 7  │───▶│ Phase 8  │             |
+│  │ URL      │    │ Parameter│    │ JS &     │    │ Vuln     │               |
+│  │ Collection│   │ Analysis │    │ Secrets  │    │ Scanning │               |
+│  └──────────┘    └──────────┘    └──────────┘    └──────────┘               |
 │                                                                             │
-│                              ┌──────────────┐                              │
-│                              │   REPORT     │                              │
-│                              │  (MD + TXT)  │                              │
-│                              └──────────────┘                              │
+│                              ┌──────────────┐                               |
+│                              │   REPORT     │                               |
+│                              │  (MD + TXT)  │                               |
+│                              └──────────────┘                               |
 └─────────────────────────────────────────────────────────────────────────────┘
 ```
 
@@ -97,8 +97,8 @@ Built with a **"broad → filter → deep"** philosophy, ReconX minimizes false 
 
 ```bash
 # 1. Clone the repository
-git clonehttps://github.com/Mohamed-AlienX/ReconX-Framework.git
-cd reconx
+git clone https://github.com/Mohamed-AlienX/ReconX-Framework.git
+cd ReconX-Framework
 
 # 2. Run the installer (installs all external tools)
 chmod +x install.sh
@@ -111,7 +111,7 @@ pip3 install -r requirements.txt
 python3 recon.py --check
 ```
 
-> 💡 **Tip:** The installer supports both `apt` (Linux) and `brew` (macOS) automatically.
+> 💡 **Tip:** The installer automatically supports both `apt` (Linux) and `brew` (macOS).
 
 ---
 
@@ -125,9 +125,6 @@ python3 recon.py example.com
 
 # Aggressive mode
 python3 recon.py example.com aggressive
-
-# Custom output directory
-python3 recon.py example.com -o ./my_scan
 
 # Quiet mode (minimal output)
 python3 recon.py example.com --quiet
@@ -339,20 +336,6 @@ recon_example.com_20250619_143022/
 ├── SUMMARY.txt                # Text summary
 └── .phase_*_done              # Resume markers
 ```
-
----
-
-## 🤝 Contributing
-
-Contributions are welcome! Please follow these steps:
-
-1. Fork the repository
-2. Create a feature branch (`git checkout -b feature/amazing-feature`)
-3. Commit your changes (`git commit -m 'Add amazing feature'`)
-4. Push to the branch (`git push origin feature/amazing-feature`)
-5. Open a Pull Request
-
-Please ensure your code follows the existing style and includes appropriate tests.
 
 ---
 
