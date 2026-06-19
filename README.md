@@ -97,11 +97,12 @@ Built with a **"broad → filter → deep"** philosophy, ReconX minimizes false 
 
 ```bash
 # 1. Clone the repository
-git clone https://github.com/YOUR_USERNAME/reconx.git
+git clonehttps://github.com/Mohamed-AlienX/ReconX-Framework.git
 cd reconx
 
 # 2. Run the installer (installs all external tools)
-bash install.sh
+chmod +x install.sh
+./install.sh
 
 # 3. Install Python dependencies
 pip3 install -r requirements.txt
