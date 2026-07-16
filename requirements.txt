@@ -1,0 +1,12 @@
+# ReconX Framework — Python dependencies
+# Core (minimal — all stdlib used)
+# No required external Python packages
+
+# Optional — prettier --check table and banner
+rich>=13.0.0
+
+# Optional — recon tools installed via pip
+uro>=1.2.0
+arjun>=2.2.1
+xnlinkfinder>=1.2.0
+jsbeautifier>=1.15.0

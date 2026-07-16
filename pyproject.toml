@@ -1,0 +1,81 @@
+[build-system]
+requires = ["setuptools>=61.0"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "reconx"
+version = "2.0.1"
+description = "8-Phase Automated Reconnaissance Pipeline"
+readme = "README.md"
+license = {text = "MIT"}
+requires-python = ">=3.10"
+dependencies = []
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=7.0",
+    "pytest-cov>=4.0",
+    "ruff>=0.1.0",
+    "mypy>=1.0",
+    "pre-commit>=3.0",
+]
+ui = [
+    "rich>=13.0",
+]
+tools = [
+    "uro>=1.2",
+    "arjun>=2.2",
+    "xnlinkfinder>=1.2",
+    "jsbeautifier>=1.15",
+]
+
+[project.scripts]
+reconx = "recon:main"
+
+[tool.ruff]
+line-length = 100
+target-version = "py310"
+
+[tool.ruff.lint]
+ignore = [
+    "E501",
+    "B008",
+    "SIM102",
+]
+
+[tool.ruff.lint.per-file-ignores]
+"recon.py" = ["TRY003", "TRY004", "PLW0603"]
+
+[tool.ruff.format]
+quote-style = "double"
+indent-style = "space"
+
+[tool.mypy]
+python_version = "3.10"
+warn_return_any = true
+warn_unused_configs = true
+disallow_untyped_defs = false
+ignore_missing_imports = true
+files = ["recon.py"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+python_files = "test_*.py"
+python_classes = "Test*"
+python_functions = "test_*"
+addopts = "-v --tb=short"
+
+[tool.coverage.run]
+source = ["."]
+omit = ["tests/*", "*/site-packages/*"]
+
+[tool.coverage.report]
+show_missing = true
+fail_under = 15
+exclude_lines = [
+    "pragma: no cover",
+    "def __repr__",
+    "raise AssertionError",
+    "raise NotImplementedError",
+    'if __name__ == "__main__":',
+]
