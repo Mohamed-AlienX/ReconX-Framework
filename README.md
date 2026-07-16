@@ -59,20 +59,29 @@ Built with a **"broad -> filter -> deep"** philosophy, ReconX minimizes false po
 
 ## Architecture
 
-```
-Phase 1: Subdomain Enum    -->  Phase 2: Live Host Detection
-         |                              |
-         v                              v
-Phase 3: Network Scanning  -->  Phase 4: Technology Detection
-         |                              |
-         v                              v
-Phase 5: URL Collection     -->  Phase 6: Parameter Analysis
-         |                              |
-         v                              v
-Phase 7: JS & Secrets      -->  Phase 8: Vulnerability Scanning
-         |
-         v
-     REPORT (MD + TXT)
+```mermaid
+flowchart LR
+    A[Phase 1: Subdomain Enum]:::phase --> B[Phase 2: Live Host Detection]:::phase
+    B --> C[Phase 3: Network Scanning]:::phase
+    C --> D[Phase 4: Technology Detection]:::phase
+    D --> E[Phase 5: URL Collection]:::phase
+    E --> F[Phase 6: Parameter Analysis]:::phase
+    F --> G[Phase 7: JS & Secrets]:::phase
+    G --> H[Phase 8: Vulnerability Scanning]:::phase
+    H --> I[REPORT<br/>MD + TXT]:::report
+
+    A -.- A1([subfinder, chaos,<br/>shuffledns, dnsx]):::note
+    B -.- B1([httpx probing,<br/>gowitness]):::note
+    C -.- C1([naabu ports,<br/>nmap services]):::note
+    D -.- D1([tech-detect,<br/>CDN, WAF]):::note
+    E -.- E1([katana, hakrawler,<br/>gauplus, waybackurls]):::note
+    F -.- F1([arjun params,<br/>gf patterns]):::note
+    G -.- G1([JS download,<br/>secrets extraction]):::note
+    H -.- H1([nuclei,<br/>CVE scanning]):::note
+
+    classDef phase   fill:#0d1117,stroke:#30363d,color:#e6edf3,stroke-width:1px;
+    classDef report  fill:#1a472a,stroke:#238636,color:#3fb950,stroke-width:2px;
+    classDef note    fill:#00000000,stroke:#00000000,color:#8b949e;
 ```
 
 ---
