@@ -566,48 +566,16 @@ class ReconPipeline:
         # Filter noise - only obvious test patterns
         all_subs = {s for s in all_subs if not re.match(r"^test\d?\.|^dev-old\.|^staging-old\.", s)}
         write_lines(raw_file, all_subs)
-        CONFIG.logger.info(f"Raw (pre-validation): {len(all_subs)}")
+        CONFIG.logger.info(f"Raw subdomains: {len(all_subs)}")
         
         # DEBUG: show first 10 raw subdomains
         if CONFIG.verbose >= 2:
             for i, s in enumerate(list(all_subs)[:10]):
                 CONFIG.logger.debug(f"  Raw[{i}]: {s}")
         
-        # Validate with dnsx - REMOVED -wd (wildcard detection drops valid subs)
-        CONFIG.logger.info("Validating with DNSX...")
-        validated_tmp = d / "validated_tmp.txt"
-        if raw_file.stat().st_size > 0:
-            run_tool("dnsx", [
-                "dnsx", "-l", str(raw_file),
-                "-silent", "-resp", "-a", "-cname",
-                "-retries", "2",
-                "-o", str(validated_tmp)
-            ])
-        
-        validated_subs = set()
-        if validated_tmp.exists():
-            for line in read_lines(validated_tmp):
-                parts = line.split()
-                if parts:
-                    # First field is hostname
-                    hostname = parts[0]
-                    if self._subdomain_re.search(hostname):
-                        validated_subs.add(hostname)
-            validated_tmp.unlink(missing_ok=True)
-        
-        # DEBUG: show validated count
-        CONFIG.logger.info(f"DNSX validated: {len(validated_subs)} subdomains")
-        if CONFIG.verbose >= 2:
-            for i, s in enumerate(list(validated_subs)[:10]):
-                CONFIG.logger.debug(f"  Validated[{i}]: {s}")
-        
-        if validated_subs:
-            write_lines(self.f_final_subdomains, validated_subs)
-        else:
-            CONFIG.logger.warn("DNSX validated 0 — falling back to all raw subdomains")
-            write_lines(self.f_final_subdomains, all_subs)
-        
-        CONFIG.logger.info(f"Validated: {safe_count(self.f_final_subdomains)} subdomains")
+        # Pass ALL raw subdomains to Phase 2 — httpx does live detection
+        write_lines(self.f_final_subdomains, all_subs)
+        CONFIG.logger.info(f"Subdomains for probing: {len(all_subs)}")
         
         # Takeover detection
         if tool_available("subzy") and self.f_final_subdomains.exists():
