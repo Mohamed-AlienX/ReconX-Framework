@@ -652,23 +652,36 @@ class ReconPipeline:
         write_lines(self.d_live / "httpx_live.txt", live_urls)
         write_lines(self.d_content / "live_subdomains.txt", subdomains)
         
-        # Screenshots with gowitness
+        # Screenshots with gowitness (needs Chrome/Chromium)
         if tool_available("gowitness"):
-            CONFIG.logger.info("Screenshots with gowitness...")
-            run_tool("gowitness", [
-                "gowitness", "scan", "file",
-                "-f", str(self.f_httpx_urls),
-                "--screenshot-path", str(self.d_screens),
-                "--db-path", str(self.d_screens / "gowitness.db"),
-                "--threads", str(self.cfg["threads"]),
-                "--timeout", "10", "--write-db"
-            ])
+            has_chrome = False
+            for chrome in ["google-chrome", "google-chrome-stable", "chromium", "chromium-browser",
+                           "/usr/bin/google-chrome", "/usr/bin/chromium", "/usr/bin/chromium-browser",
+                           "C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe",
+                           "C:\\Program Files (x86)\\Google\\Chrome\\Application\\chrome.exe"]:
+                if Path(chrome).exists() or which(chrome):
+                    has_chrome = True
+                    break
             
-            run_tool("gowitness", [
-                "gowitness", "report", "generate",
-                "--db-path", str(self.d_screens / "gowitness.db"),
-                "--output", str(self.d_screens / "report.html")
-            ])
+            if not has_chrome:
+                CONFIG.logger.warn("Chrome/Chromium not found — gowitness screenshots skipped")
+                CONFIG.logger.warn("Install: apt install chromium (Linux) or Google Chrome (Win/Mac)")
+            else:
+                CONFIG.logger.info("Screenshots with gowitness...")
+                run_tool("gowitness", [
+                    "gowitness", "scan", "file",
+                    "-f", str(self.f_httpx_urls),
+                    "--screenshot-path", str(self.d_screens),
+                    "--db-path", str(self.d_screens / "gowitness.db"),
+                    "--threads", str(self.cfg["threads"]),
+                    "--timeout", "10", "--write-db"
+                ])
+                
+                run_tool("gowitness", [
+                    "gowitness", "report", "generate",
+                    "--db-path", str(self.d_screens / "gowitness.db"),
+                    "--output", str(self.d_screens / "report.html")
+                ])
             
             png_count = len(list(self.d_screens.glob("*.png")))
             CONFIG.logger.info(f"Screenshots: {png_count}")
