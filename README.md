@@ -210,43 +210,6 @@ python3 recon.py --update   # Update all tools + nuclei templates
 
 ---
 
-## Tool Reference
-
-### Core Tools (Required)
-
-| Tool | Phase | Purpose |
-|------|-------|---------|
-| `subfinder` | 1 | Passive subdomain discovery |
-| `dnsx` | 1 | DNS validation & resolution |
-| `httpx` | 2, 4, 5 | HTTP probing & tech detection |
-| `jq` | 3 | JSON parsing |
-
-### Optional Tools (Recommended)
-
-| Tool | Phase | Purpose |
-|------|-------|---------|
-| `nuclei` | 1, 3, 8 | Vulnerability scanning |
-| `naabu` | 3 | Fast port scanning |
-| `nmap` | 3 | Service detection |
-| `katana` | 5 | Web crawler |
-| `chaos` | 1 | Passive subdomain discovery |
-| `shuffledns` | 1 | DNS bruteforce |
-| `subzy` | 1 | Subdomain takeover detection |
-| `gowitness` | 2 | Web screenshots |
-| `hakrawler` | 5 | URL crawler |
-| `gauplus` | 5 | Archive URL discovery |
-| `waybackurls` | 5 | Wayback Machine URLs |
-| `subjs` | 5, 7 | JavaScript URL extraction |
-| `uro` | 5 | URL deduplication |
-| `arjun` | 6 | Hidden parameter discovery |
-| `xnLinkFinder` | 6, 7 | Link extraction from JS |
-| `js-beautify` | 7 | JavaScript formatting |
-| `feroxbuster` | 5 | Content discovery |
-
-> All tools are installed automatically by `install.sh` / `install.ps1`. Missing optional tools are gracefully skipped.
-
----
-
 ## Configuration
 
 ### Mode Config
