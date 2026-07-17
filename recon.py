@@ -604,8 +604,8 @@ class ReconPipeline:
         if validated_subs:
             write_lines(self.f_final_subdomains, validated_subs)
         else:
-            CONFIG.logger.warn("No subdomains validated — using main domain as fallback")
-            write_lines(self.f_final_subdomains, [self.domain])
+            CONFIG.logger.warn("DNSX validated 0 — falling back to all raw subdomains")
+            write_lines(self.f_final_subdomains, all_subs)
         
         CONFIG.logger.info(f"Validated: {safe_count(self.f_final_subdomains)} subdomains")
         
