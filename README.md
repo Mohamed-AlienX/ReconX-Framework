@@ -7,6 +7,7 @@
 [![Python](https://img.shields.io/badge/Python-3.10%2B-3776AB?style=for-the-badge&logo=python&logoColor=white)](https://python.org)
 [![CI](https://img.shields.io/badge/CI-Passing-22c55e?style=for-the-badge)](https://github.com/Mohamed-AlienX/ReconX-Framework/actions)
 [![Tests](https://img.shields.io/badge/Tests-63%20Passing-3b82f6?style=for-the-badge)](https://github.com/Mohamed-AlienX/ReconX-Framework)
+[![Tools](https://img.shields.io/badge/Tools-25+-8b5cf6?style=for-the-badge)]()
 [![License](https://img.shields.io/badge/License-MIT-22c55e?style=for-the-badge)](LICENSE)
 [![Platform](https://img.shields.io/badge/Platform-Linux%20%7C%20macOS%20%7C%20Windows-8b5cf6?style=for-the-badge)]()
 
@@ -74,10 +75,10 @@ flowchart LR
     B -.- B1([httpx probing,<br/>gowitness]):::note
     C -.- C1([naabu ports,<br/>nmap services]):::note
     D -.- D1([tech-detect,<br/>CDN, WAF]):::note
-    E -.- E1([katana, hakrawler,<br/>gauplus, waybackurls]):::note
+    E -.- E1([katana, gauplus,<br/>subjs, urlfinder]):::note
     F -.- F1([arjun params,<br/>gf patterns]):::note
     G -.- G1([JS download,<br/>secrets extraction]):::note
-    H -.- H1([nuclei,<br/>CVE scanning]):::note
+    H -.- H1([vulnx, nuclei,<br/>CVE scanning]):::note
 
     classDef phase   fill:#0d1117,stroke:#30363d,color:#e6edf3,stroke-width:1px;
     classDef report  fill:#1a472a,stroke:#238636,color:#3fb950,stroke-width:2px;
@@ -189,9 +190,10 @@ python3 recon.py --update   # Update all tools + nuclei templates
 - **Categorization:** CMS, frameworks, JS frameworks, cloud/CDN/WAF
 
 ### Phase 5: URL Collection
-- **Crawlers:** `katana`, `hakrawler`
-- **Archives:** `gauplus`, `waybackurls`
+- **Crawlers:** `katana` (JS-aware, domain-scoped)
+- **Archives:** `gauplus`
 - **JS Extraction:** `subjs`
+- **Endpoint Discovery:** `urlfinder`
 - **Deduplication:** `uro`
 
 ### Phase 6: Parameter Analysis
@@ -205,7 +207,8 @@ python3 recon.py --update   # Update all tools + nuclei templates
 - **Secret Detection:** AWS keys, GitHub tokens, JWTs, API keys
 
 ### Phase 8: Vulnerability Scanning
-- **Nuclei:** High + critical severity
+- **vulnx:** Tech-based + domain-based CVE discovery (top 10 techs batched)
+- **Nuclei:** High + critical severity, tech-aware templates
 - **CVE Focus:** Critical CVE templates only
 
 ---

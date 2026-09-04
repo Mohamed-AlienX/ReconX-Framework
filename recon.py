@@ -90,10 +90,12 @@ TOOL_REGISTRY: List[Tool] = [
     Tool("gowitness",   "optional", ["gowitness", "--version"]),
     Tool("katana",      "optional", ["katana", "-version"],
         update_cmd=["katana", "-up"]),
-    Tool("hakrawler",   "optional", ["hakrawler"]),
     Tool("gauplus",     "optional", ["gauplus", "-version"]),
-    Tool("waybackurls", "optional", ["waybackurls", "-version"]),
     Tool("subjs",       "optional", ["subjs", "-version"]),
+    Tool("urlfinder",   "optional", ["urlfinder", "-version"],
+        update_cmd=["urlfinder", "-up"]),
+    Tool("vulnx",       "optional", ["vulnx", "version"],
+        update_cmd=["vulnx", "update"]),
     Tool("uro",         "optional", ["uro", "--version"],
         update_cmd=["pip3", "install", "--user", "--upgrade", "uro"]),
     Tool("xnLinkFinder","optional", ["xnLinkFinder", "--version"],
@@ -386,7 +388,7 @@ def run_tool(
     stdout_f = None
     if stdout_path:
         stdout_path.parent.mkdir(parents=True, exist_ok=True)
-        stdout_f = open(stdout_path, "a")
+        stdout_f = open(stdout_path, "w")
     
     stdin_f = None
     if stdin_path and stdin_path.exists():
@@ -834,8 +836,9 @@ class ReconPipeline:
                         "-o", str(self.d_vulns / "nuclei_web.txt")
                     ])
             
-            pool.submit(run_nmap_fast)
-            pool.submit(run_nuclei_web)
+            f_nmap = pool.submit(run_nmap_fast)
+            f_nuclei = pool.submit(run_nuclei_web)
+            wait([f_nmap, f_nuclei])
         
         # Stage 3: nmap deep + nuclei network — parallel
         deep_targets = set()
@@ -846,6 +849,8 @@ class ReconPipeline:
             current_host = None
             for line in read_lines(nmap_fast_gnmap):
                 if not line or not line.startswith("Host:"):
+                    continue
+                if "(" not in line and "Status:" not in line and "Ports:" not in line:
                     continue
                 host_match = gnmap_host_re.search(line)
                 if host_match:
@@ -867,7 +872,11 @@ class ReconPipeline:
                     capture_output=True, text=True, timeout=600
                 )
                 resolved = [host.strip() for host in result.stdout.strip().split("\n") if host.strip()]
-                write_lines(deep_input, resolved)
+                if resolved:
+                    write_lines(deep_input, resolved)
+                else:
+                    CONFIG.logger.warn("dnsx resolution failed — using original hostnames")
+                    write_lines(deep_input, deep_targets)
             else:
                 write_lines(deep_input, deep_targets)
             
@@ -901,8 +910,11 @@ class ReconPipeline:
                             "-o", str(self.d_vulns / "nuclei_network.txt")
                         ])
                 
-                pool.submit(run_nmap_deep)
-                pool.submit(run_nuclei_net)
+                f_nmap_deep = pool.submit(run_nmap_deep)
+                f_nuclei_net = pool.submit(run_nuclei_net)
+                wait([f_nmap_deep, f_nuclei_net])
+        else:
+            CONFIG.logger.warn("No hosts with sensitive ports found — deep scan skipped")
         
         # Prioritization (P1/P2)
         p1_meta = {
@@ -1088,13 +1100,12 @@ class ReconPipeline:
         write_lines(self.d_content / "domains.txt", domains)
         
         # Stage 1: crawlers in parallel
-        CONFIG.logger.info("Stage 1: crawling (katana, hakrawler, gauplus, waybackurls, subjs)...")
+        CONFIG.logger.info("Stage 1: crawling (katana, gauplus, subjs, urlfinder)...")
         
         katana_file = self.d_content / "katana.txt"
-        hakrawler_file = self.d_content / "hakrawler.txt"
         gaup_file = self.d_content / "gaup.txt"
-        wayback_file = self.d_content / "wayback.txt"
         subjs_file = self.d_content / "subjs.txt"
+        urlfinder_file = self.d_content / "urlfinder.txt"
         crawl_list = self.d_live / "crawl_urls.txt"
         
         def run_katana():
@@ -1104,25 +1115,11 @@ class ReconPipeline:
                     "-list", str(crawl_list),
                     "-d", str(self.cfg["katana_depth"]),
                     "-rl", str(self.cfg["rate_limit"]),
-                    "-ef", "png,jpg,jpeg,gif,svg,woff,woff2,css,ico",
+                    "-ef", "png,jpg,jpeg,gif,svg,woff,woff2,css,ico,pdf,mp4,mp3",
+                    "-jc",
+                    "-fs", "domain",
                     "-o", str(katana_file)
                 ])
-        
-        def run_hakrawler():
-            if tool_available("hakrawler"):
-                try:
-                    with open(crawl_list) as f:
-                        content = f.read()
-                    result = subprocess.run(
-                        ["hakrawler", "-subs", "-insecure", "-plain"],
-                        input=content, capture_output=True, text=True, timeout=300
-                    )
-                    if result.stdout:
-                        write_lines(hakrawler_file, result.stdout.strip().split("\n"))
-                except subprocess.TimeoutExpired:
-                    CONFIG.logger.debug("hakrawler timed out")
-                except Exception as e:
-                    CONFIG.logger.debug(f"hakrawler failed: {type(e).__name__}")
         
         def run_gauplus():
             if tool_available("gauplus"):
@@ -1130,7 +1127,7 @@ class ReconPipeline:
                     with open(self.d_content / "domains.txt") as f:
                         content = f.read()
                     result = subprocess.run(
-                        ["gauplus"],
+                        ["gauplus", "-blacklist", "png,jpg,gif,svg,woff,woff2,css,ico,pdf"],
                         input=content, capture_output=True, text=True, timeout=300
                     )
                     if result.stdout:
@@ -1140,28 +1137,12 @@ class ReconPipeline:
                 except Exception as e:
                     CONFIG.logger.debug(f"gauplus failed: {type(e).__name__}")
         
-        def run_wayback():
-            if tool_available("waybackurls"):
-                try:
-                    with open(self.d_content / "domains.txt") as f:
-                        content = f.read()
-                    result = subprocess.run(
-                        ["waybackurls"],
-                        input=content, capture_output=True, text=True, timeout=300
-                    )
-                    if result.stdout:
-                        write_lines(wayback_file, result.stdout.strip().split("\n"))
-                except subprocess.TimeoutExpired:
-                    CONFIG.logger.debug("waybackurls timed out")
-                except Exception as e:
-                    CONFIG.logger.debug(f"waybackurls failed: {type(e).__name__}")
-        
         def run_subjs():
             if tool_available("subjs"):
                 try:
                     result = subprocess.run(
-                        ["subjs", "-i", str(crawl_list)],
-                        capture_output=True, text=True, timeout=300
+                        ["subjs", "-i", str(crawl_list), "-concurrency", "50"],
+                        capture_output=True, text=True, timeout=600
                     )
                     if result.stdout:
                         write_lines(subjs_file, result.stdout.strip().split("\n"))
@@ -1170,13 +1151,25 @@ class ReconPipeline:
                 except Exception as e:
                     CONFIG.logger.debug(f"subjs failed: {type(e).__name__}")
         
-        with ThreadPoolExecutor(max_workers=5) as pool:
+        def run_urlfinder():
+            if tool_available("urlfinder"):
+                run_tool("urlfinder", [
+                    "urlfinder",
+                    "-d", str(self.d_content / "domains.txt"),
+                    "-all",
+                    "-rl", "30",
+                    "-timeout", "30",
+                    "-max-time", "10",
+                    "-silent",
+                    "-o", str(urlfinder_file)
+                ])
+        
+        with ThreadPoolExecutor(max_workers=4) as pool:
             fs = [
                 pool.submit(run_katana),
-                pool.submit(run_hakrawler),
                 pool.submit(run_gauplus),
-                pool.submit(run_wayback),
                 pool.submit(run_subjs),
+                pool.submit(run_urlfinder),
             ]
             wait(fs)
         
@@ -1219,7 +1212,7 @@ class ReconPipeline:
         all_urls = self.d_content / "all_urls.txt"
         
         all_url_set = set()
-        for src in [katana_file, hakrawler_file, gaup_file, wayback_file]:
+        for src in [katana_file, gaup_file, subjs_file, urlfinder_file]:
             if src.exists():
                 for line in read_lines(src):
                     # Filter mailto:, javascript:, static assets
@@ -1746,11 +1739,78 @@ class ReconPipeline:
         write_lines(targets_file, targets)
         CONFIG.logger.info(f"Vulnerability scanning: {len(targets)} targets")
         
+        # ── vulnx: CVE discovery by technology (batched) ─────────────
+        vulnx_templates = set()
+        if tool_available("vulnx"):
+            CONFIG.logger.info("vulnx: discovering CVEs by technology...")
+            
+            tech_file = self.d_tech / "unique_technologies.txt"
+            if tech_file.exists():
+                all_techs = read_lines(tech_file)
+                known_techs = [t for t in all_techs if len(t) > 2][:10]
+                
+                if known_techs:
+                    batch_query = " || ".join(known_techs)
+                    run_tool("vulnx", [
+                        "vulnx", "search",
+                        batch_query,
+                        "--severity", "critical,high",
+                        "--template",
+                        "--limit", "200",
+                        "--sort-desc", "cvss_score",
+                        "--json",
+                        "-o", str(vulns_dir / "vulnx_tech.json"),
+                        "-q"
+                    ])
+            
+            run_tool("vulnx", [
+                "vulnx", "search",
+                self.domain,
+                "--severity", "critical,high",
+                "--cvss-score", ">7.0",
+                "--kev",
+                "--limit", "100",
+                "--sort-desc", "cvss_score",
+                "--json",
+                "-o", str(vulns_dir / "vulnx_domain.json"),
+                "-q"
+            ])
+            
+            for jf in [vulns_dir / "vulnx_tech.json", vulns_dir / "vulnx_domain.json"]:
+                if jf.exists():
+                    for line in read_lines(jf):
+                        try:
+                            obj = json.loads(line)
+                            tid = obj.get("template_id") or obj.get("templateID")
+                            if tid:
+                                vulnx_templates.add(tid)
+                            for tag in obj.get("tags", []):
+                                if tag not in ("critical", "high", "medium", "low", "info"):
+                                    vulnx_templates.add(tag)
+                        except Exception:
+                            continue
+            
+            if vulnx_templates:
+                templates_file = vulns_dir / "vulnx_templates.txt"
+                write_lines(templates_file, vulnx_templates)
+                CONFIG.logger.info(f"vulnx: {len(vulnx_templates)} templates found")
+                
+                if tool_available("nuclei"):
+                    run_tool("nuclei", [
+                        "nuclei", "-l", str(targets_file),
+                        "-t", str(templates_file),
+                        "-severity", "critical,high",
+                        "-c", str(self.cfg["threads"]),
+                        "-rl", str(self.cfg["rate_limit"]),
+                        "-silent",
+                        "-o", str(vulns_dir / "nuclei_vulnx.txt")
+                    ])
+        
+        # ── nuclei: tech-aware scan ──────────────────────────────────
         if not tool_available("nuclei"):
             CONFIG.logger.warn("nuclei not installed — skipping")
             return
         
-        # Tech-aware (high + critical)
         CONFIG.logger.info("Running Nuclei (high + critical)...")
         run_tool("nuclei", [
             "nuclei", "-l", str(targets_file),
@@ -1762,7 +1822,6 @@ class ReconPipeline:
             "-o", str(vulns_dir / "high_critical.txt")
         ])
         
-        # CVEs only (critical)
         CONFIG.logger.info("Running Nuclei (critical CVEs)...")
         cve_dir = None
         templates_root = find_nuclei_templates_dir()
@@ -1779,9 +1838,9 @@ class ReconPipeline:
                 "-o", str(vulns_dir / "cves_critical.txt")
             ])
         
-        # Merge
+        # Merge all findings
         all_findings = set()
-        for fname in ["high_critical.txt", "cves_critical.txt"]:
+        for fname in ["high_critical.txt", "cves_critical.txt", "nuclei_vulnx.txt"]:
             fp = vulns_dir / fname
             if fp.exists():
                 for line in read_lines(fp):
