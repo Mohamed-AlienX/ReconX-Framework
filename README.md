@@ -6,7 +6,7 @@
 
 [![Python](https://img.shields.io/badge/Python-3.10%2B-3776AB?style=for-the-badge&logo=python&logoColor=white)](https://python.org)
 [![CI](https://img.shields.io/badge/CI-Passing-22c55e?style=for-the-badge)](https://github.com/Mohamed-AlienX/ReconX-Framework/actions)
-[![Tests](https://img.shields.io/badge/Tests-63%20Passing-3b82f6?style=for-the-badge)](https://github.com/Mohamed-AlienX/ReconX-Framework)
+[![Tests](https://img.shields.io/badge/Tests-84%20Passing-3b82f6?style=for-the-badge)](https://github.com/Mohamed-AlienX/ReconX-Framework)
 [![Tools](https://img.shields.io/badge/Tools-25+-8b5cf6?style=for-the-badge)]()
 [![License](https://img.shields.io/badge/License-MIT-22c55e?style=for-the-badge)](LICENSE)
 [![Platform](https://img.shields.io/badge/Platform-Linux%20%7C%20macOS%20%7C%20Windows-8b5cf6?style=for-the-badge)]()
@@ -47,13 +47,13 @@ Built with a **"broad -> filter -> deep"** philosophy, ReconX minimizes false po
 | Feature | Description |
 |---------|-------------|
 | **8-Phase Pipeline** | Complete recon workflow from subdomains to vulnerability findings |
-| **Smart Filtering** | Noise reduction, deduplication, and priority scoring built-in |
+| **Smart Filtering** | Noise reduction, deduplication, priority scoring, and scope enforcement (target domain + subdomains only) |
 | **Dual Mode** | `stealth` (low footprint) or `aggressive` (maximum coverage) |
 | **Rich Reporting** | Markdown + text summaries with statistics and next-step guidance |
 | **Tool Doctor** | Built-in `--check` to verify all dependencies |
 | **Auto-Update** | One-command tool updates with `--update` |
 | **Resume Support** | Phase-level resume markers -- stop and restart anytime |
-| **Type-Safe** | Full type hints, mypy checked, 63 passing tests |
+| **Type-Safe** | Full type hints, mypy checked, 84 passing tests |
 | **Cross-Platform** | Linux, macOS, Windows (PowerShell installer) |
 
 ---
@@ -71,12 +71,12 @@ flowchart LR
     G --> H[Phase 8: Vulnerability Scanning]:::phase
     H --> I[REPORT<br/>MD + TXT]:::report
 
-    A -.- A1([subfinder, chaos,<br/>shuffledns, dnsx]):::note
+    A -.- A1([subfinder, assetfinder,<br/>shuffledns, dnsx]):::note
     B -.- B1([httpx probing,<br/>gowitness]):::note
     C -.- C1([naabu ports,<br/>nmap services]):::note
     D -.- D1([tech-detect,<br/>CDN, WAF]):::note
     E -.- E1([katana, gauplus,<br/>subjs, urlfinder]):::note
-    F -.- F1([arjun params,<br/>gf patterns]):::note
+    F -.- F1([arjun, fallparams,<br/>gf patterns]):::note
     G -.- G1([JS download,<br/>secrets extraction]):::note
     H -.- H1([vulnx, nuclei,<br/>CVE scanning]):::note
 
@@ -171,7 +171,7 @@ python3 recon.py --update   # Update all tools + nuclei templates
 ## Phase Breakdown
 
 ### Phase 1: Subdomain Enumeration
-- **Passive:** `subfinder`, `chaos`
+- **Passive:** `subfinder`, `assetfinder`
 - **Bruteforce:** `shuffledns` + wordlist
 - **Validation:** `dnsx` (A + CNAME records)
 - **Takeover:** `subzy`, `nuclei` (takeover tags)
@@ -194,11 +194,12 @@ python3 recon.py --update   # Update all tools + nuclei templates
 - **Archives:** `gauplus`
 - **JS Extraction:** `subjs`
 - **Endpoint Discovery:** `urlfinder`
+- **Scope Filtering:** every URL and crawl host is enforced to the target domain + its subdomains (drops third-party CDNs, lookalikes like `evil-example.com`, and bare IPs)
 - **Deduplication:** `uro`
 
 ### Phase 6: Parameter Analysis
 - **Extraction:** From URLs + JS files
-- **Discovery:** `arjun` (hidden params)
+- **Discovery:** `arjun`, `fallparams` (hidden params)
 - **Pattern Matching:** `gf` (XSS, SQLi, SSRF, SSTI, LFI, etc.)
 
 ### Phase 7: JavaScript & Secrets Analysis

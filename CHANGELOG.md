@@ -4,6 +4,25 @@ All notable changes to ReconX Framework are documented here.
 
 Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
+## [2.1.0] - 2026-09-25
+
+### Added
+- **Scope filtering** -- `host_in_scope()` / `url_in_scope()` helpers enforce that Phase 5 keeps only the target domain + every subdomain (label-boundary match, so `evil-example.com` is rejected). Applied to the URL normalize step and to `domains.txt` feeding the crawlers, so all downstream phases (6/7/8) operate on a clean scope. Built-in IPs and third-party hosts are dropped.
+- **fallparams** to Phase 6 parameter discovery -- hidden parameter fuzzing alongside `arjun`, consuming the live URL list (no `-crawl`).
+
+### Fixed
+- **Phase 5 katana scoping** -- `-fs domain` was treated as a literal regex and matched almost nothing; switched to `-fs rdn` (restores full crawl coverage).
+- **Phase 5 urlfinder multi-domain** -- `urlfinder -d domains.txt` was searching for the file path as a domain (0 results); now repeats `-d` per domain and drops the `-max-time 10` truncation.
+
+### Changed
+- **chaos removed** -- Phase 1 passive subdomain source is now `assetfinder --subs-only <domain>` (fewer rate-limit/API-key headaches); installer scripts and README updated.
+- **Crawler telemetry** -- per-stage `Crawlers: katana=N gauplus=N subjs=N urlfinder=N` log line.
+- **Phase 1 progress log** -- removed the redundant `External tools: subfinder=N chaos=M shuffledns=K` line.
+
+### Removed
+- **Wayback Machine URL fallback** in Phase 5 (69 entries recovery path dropped by maintainer decision).
+- Stale `chaos-config.yaml` entry from `.gitignore`.
+
 ## [2.0.1] - 2026-07-16
 
 ### Fixed

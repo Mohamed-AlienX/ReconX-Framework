@@ -24,6 +24,9 @@ import subprocess
 import sys
 import textwrap
 import time
+import ssl
+import urllib.error
+import urllib.request
 from concurrent.futures import ThreadPoolExecutor, wait
 from dataclasses import dataclass, field
 from datetime import datetime
@@ -82,8 +85,9 @@ TOOL_REGISTRY: List[Tool] = [
     Tool("nmap",        "optional", ["nmap", "--version"]),
     Tool("naabu",       "optional", ["naabu", "-version"],
         update_cmd=["naabu", "-update"]),
-    Tool("chaos",       "optional", ["chaos", "-version"],
-        update_cmd=["chaos", "-update"]),
+    Tool("assetfinder", "optional", ["assetfinder", "-version"]),
+    Tool("fallparams",  "optional", ["fallparams", "-version"],
+        update_cmd=["fallparams", "-duc"]),
     Tool("shuffledns",  "optional", ["shuffledns", "-version"],
         update_cmd=["shuffledns", "-up"]),
     Tool("subzy",       "optional", ["subzy", "version"]),
@@ -232,6 +236,39 @@ CONFIG = ReconConfig()
 def escape_domain(domain: str) -> str:
     return re.escape(domain)
 
+
+def normalize_host(host: str) -> str:
+    """Lowercase hostname, strip whitespace and trailing dot."""
+    return host.strip().lower().rstrip(".")
+
+
+def host_in_scope(host: Optional[str], domain: str) -> bool:
+    """True if host is the apex domain or one of its subdomains.
+
+    Literal label-boundary match: ``evil-bbpos.com`` is NOT in scope for
+    ``bbpos.com`` even though it ends with ``bbpos.com`` (no leading dot).
+    """
+    if not host:
+        return False
+    host = normalize_host(host)
+    domain = normalize_host(domain)
+    if not domain:
+        return False
+    return host == domain or host.endswith("." + domain)
+
+
+def url_in_scope(url: str, domain: str) -> bool:
+    """True if the URL's host belongs to the target domain scope."""
+    if not url or not url.strip():
+        return False
+    try:
+        parsed = urlparse(url)
+    except ValueError:
+        return False
+    if parsed.scheme and parsed.scheme.lower() not in ("http", "https"):
+        return False
+    return host_in_scope(parsed.hostname, domain)
+
 def safe_count(path: Path) -> int:
     if path.exists() and path.stat().st_size > 0:
         try:
@@ -259,6 +296,151 @@ def append_line(path: Path, line: str):
         f.write(line.rstrip("\n") + "\n")
 
 # =============================================================================
+# PASSIVE SUBDOMAIN FALLBACK (stdlib only — no external tools required)
+# =============================================================================
+
+def _parse_crtsh_json(text: str) -> List[str]:
+    """Extract hostnames from crt.sh JSON output."""
+    hosts = set()
+    try:
+        data = json.loads(text)
+        if not isinstance(data, list):
+            return []
+        for entry in data:
+            if not isinstance(entry, dict):
+                continue
+            name = entry.get("name_value") or ""
+            for h in name.splitlines():
+                h = h.strip().lstrip("*.").strip()
+                if h:
+                    hosts.add(h)
+    except Exception:
+        return []
+    return sorted(hosts)
+
+
+def _parse_hackertarget(text: str) -> List[str]:
+    """Extract hostnames from HackerTarget hostsearch plain-text output."""
+    hosts = set()
+    for line in text.splitlines():
+        h = line.strip().split(",")[0].strip().lstrip("*.").strip().lower()
+        if h and h not in ("error", "dns resolution failed", "api count exceeded", "hit your usage limit"):
+            hosts.add(h)
+    return sorted(hosts)
+
+
+def _parse_otx_json(text: str) -> List[str]:
+    """Extract hostnames from AlienVault OTX passive_dns JSON output."""
+    hosts = set()
+    try:
+        data = json.loads(text)
+        if not isinstance(data, dict):
+            return []
+        entries = data.get("passive_dns") or []
+        for entry in entries:
+            if isinstance(entry, dict):
+                h = (entry.get("hostname") or "").strip().lower()
+                if h:
+                    hosts.add(h)
+    except Exception:
+        return []
+    return sorted(hosts)
+
+
+def _parse_bufferover_json(text: str) -> List[str]:
+    """Extract hostnames from DNS.BufferOver.run JSON output."""
+    hosts = set()
+    try:
+        data = json.loads(text)
+        if not isinstance(data, dict):
+            return []
+        for key in ("FDNS_A", "RDNS"):
+            for item in data.get(key) or []:
+                h = (item or "").split(",")[0].strip().lower()
+                if h:
+                    hosts.add(h)
+    except Exception:
+        return []
+    return sorted(hosts)
+
+
+def _parse_wayback_json(text: str) -> List[str]:
+    """Extract hostnames from Wayback Machine CDX JSON output."""
+    hosts = set()
+    try:
+        data = json.loads(text)
+        if not isinstance(data, list):
+            return []
+        for row in data:
+            if isinstance(row, list) and row:
+                h = urlparse(str(row[0])).hostname
+                if h:
+                    hosts.add(h.lower())
+    except Exception:
+        return []
+    return sorted(hosts)
+
+
+def _http_get(url: str, timeout: int = 45, retries: int = 2) -> Optional[str]:
+    """GET a URL and return its body as text, or None on any failure."""
+    headers = {"User-Agent": "Mozilla/5.0 (X11; Linux x86_64) ReconX"}
+    for _ in range(retries):
+        try:
+            req = urllib.request.Request(url, headers=headers)
+            with urllib.request.urlopen(req, timeout=timeout) as resp:
+                data: bytes = resp.read()
+                return data.decode("utf-8", errors="replace")
+        except urllib.error.URLError as e:
+            if isinstance(getattr(e, "reason", None), ssl.SSLCertVerificationError):
+                # Some public passive APIs serve expired certs (e.g. HackerTarget).
+                # These are read-only lookups, so retry once without verification.
+                try:
+                    req = urllib.request.Request(url, headers=headers)
+                    with urllib.request.urlopen(req, timeout=timeout,
+                                                context=ssl._create_unverified_context()) as resp:
+                        data_raw: bytes = resp.read()
+                        return data_raw.decode("utf-8", errors="replace")
+                except Exception:
+                    pass
+        except Exception:
+            pass
+    return None
+
+
+def _passive_sources() -> List[tuple]:
+    return [
+        ("crt.sh",        "https://crt.sh/?q=%25.{domain}&output=json",            _parse_crtsh_json),
+        ("bufferover",    "https://dns.bufferover.run/dns?q=.{domain}",             _parse_bufferover_json),
+        ("hackertarget",  "https://api.hackertarget.com/hostsearch/?q={domain}",    _parse_hackertarget),
+        ("otx",           "https://otx.alienvault.com/api/v1/indicators/domain/{domain}/passive_dns", _parse_otx_json),
+        ("wayback",       "https://web.archive.org/cdx/search/cdx?url=*.{domain}&output=json&fl=original&collapse=urlkey&limit=1000", _parse_wayback_json),
+    ]
+
+
+def passive_fallback(domain: str, subdomain_re) -> List[str]:
+    """If external tools produce nothing, discover subdomains via built-in
+    HTTP sources (Certificate Transparency + passive DNS APIs)."""
+    all_hosts = set()
+    parsers = {name: parser for name, _, parser in _passive_sources()}
+
+    def fetch(url: str) -> Optional[str]:
+        return _http_get(url.format(domain=domain))
+
+    with ThreadPoolExecutor(max_workers=len(parsers)) as ex:
+        futures = {ex.submit(fetch, url): name for name, url, _ in _passive_sources()}
+        for fut, name in futures.items():
+            text = fut.result()
+            if not text:
+                CONFIG.logger.debug(f"Fallback source '{name}' unreachable")
+                continue
+            for h in parsers[name](text):
+                h = h.strip().lower().rstrip(".")
+                if h and subdomain_re.search(h):
+                    all_hosts.add(h)
+            CONFIG.logger.debug(f"Fallback source '{name}' parsed")
+    return sorted(all_hosts)
+
+# =============================================================================
 # TOOL EXECUTION
 # =============================================================================
 
@@ -281,7 +463,8 @@ SPECIAL_PARSERS = {
     "naabu":      _extract_version,
     "katana":     _extract_version,
     "shuffledns": _extract_version,
-    "chaos":      _extract_version,
+    "assetfinder": _extract_version,
+    "fallparams":  _extract_version,
 }
 
 
@@ -424,6 +607,43 @@ def run_tool(
 def tool_available(name: str) -> bool:
     return which(name) is not None
 
+
+def build_urlfinder_cmd(domains: List[str], output: Path) -> List[str]:
+    """Build a urlfinder command with one -d flag per domain.
+
+    NOTE: urlfinder's -d/--list takes domains directly, NOT a file path —
+    passing a file path makes it enumerate the path string as a domain.
+    """
+    cmd = ["urlfinder"]
+    for dom in domains:
+        dom = dom.strip()
+        if dom:
+            cmd += ["-d", dom]
+    cmd += [
+        "-all",
+        "-rl", "30",
+        "-timeout", "30",
+        "-silent",
+        "-o", str(output),
+    ]
+    return cmd
+
+
+def build_fallparams_cmd(input_path: Path, output: Path, threads: int) -> List[str]:
+    """Build a fallparams command reading a file of URLs.
+
+    fallparams -u accepts a filename OR a URL; the file is the list of
+    live URLs gathered across all domains/subdomains. Only the URLs we
+    already collected are scanned (no -crawl) to keep runtime bounded.
+    """
+    return [
+        "fallparams",
+        "-u", str(input_path),
+        "-t", str(threads),
+        "-silent",
+        "-o", str(output),
+    ]
+
 # =============================================================================
 # PHASE RUNNER
 # =============================================================================
@@ -505,25 +725,28 @@ class ReconPipeline:
     def _phase1(self) -> None:
         d = self.d_sub
         passive_file = d / "passive.txt"
+        assetfinder_file = d / "assetfinder.txt"
         bruteforce_file = d / "bruteforce.txt"
         raw_file = d / "raw.txt"
         validated_file = d / "validated.txt"
         
-        for f in [passive_file, bruteforce_file, raw_file, validated_file, self.f_final_subdomains]:
+        for f in [passive_file, assetfinder_file, bruteforce_file, raw_file, validated_file, self.f_final_subdomains]:
             f.write_text("")
         
         # Passive
         CONFIG.logger.info("Passive enumeration...")
+        # Capture stdout directly (no -o/-silent) — mirrors the plain
+        # `subfinder -d <domain>` invocation that works everywhere.
         run_tool("subfinder", [
-            "subfinder", "-d", self.domain,
-            "-silent", "-all", "-timeout", "30", "-max-time", "60",
-            "-o", str(passive_file)
-        ])
+            "subfinder", "-d", self.domain
+        ], stdout_path=passive_file)
         
-        if tool_available("chaos"):
-            run_tool("chaos", [
-                "chaos", "-d", self.domain, "-silent"
-            ], stdout_path=passive_file)
+        # NOTE: assetfinder gets its own file — sharing passive_file would
+        # truncate it (run_tool opens stdout targets in "w" mode).
+        if tool_available("assetfinder"):
+            run_tool("assetfinder", [
+                "assetfinder", "--subs-only", self.domain
+            ], stdout_path=assetfinder_file)
         
         # Bruteforce
         CONFIG.logger.info("DNS Bruteforce...")
@@ -551,7 +774,7 @@ class ReconPipeline:
         # Merge + clean
         CONFIG.logger.info("Merging and cleaning...")
         all_subs = set()
-        for f in [passive_file, bruteforce_file]:
+        for f in [passive_file, assetfinder_file, bruteforce_file]:
             if f.exists():
                 for line in read_lines(f):
                     line = line.strip()
@@ -567,6 +790,18 @@ class ReconPipeline:
         
         # Filter noise - only obvious test patterns
         all_subs = {s for s in all_subs if not re.match(r"^test\d?\.|^dev-old\.|^staging-old\.", s)}
+        
+        # Built-in fallback when external tools yield nothing
+        if not all_subs:
+            CONFIG.logger.warn("External enumeration returned 0 — trying built-in passive sources (crt.sh, hackertarget, otx)")
+            fallback_subs = passive_fallback(self.domain, self._subdomain_re)
+            if fallback_subs:
+                all_subs.update(fallback_subs)
+                write_lines(d / "fallback.txt", fallback_subs)
+                CONFIG.logger.info(f"Built-in fallback found {len(fallback_subs)} subdomains")
+            else:
+                CONFIG.logger.warn("Built-in fallback also returned 0 — check network and logs/tools/subfinder.log")
+        
         write_lines(raw_file, all_subs)
         CONFIG.logger.info(f"Raw subdomains: {len(all_subs)}")
         
@@ -1091,12 +1326,13 @@ class ReconPipeline:
         crawl_urls = [line.split()[0] if line.strip() else "" for line in input_urls if line.strip()]
         write_lines(self.d_live / "crawl_urls.txt", crawl_urls)
         
-        # Extract domains
+        # Extract domains (scope-filtered — an external redirect must not feed the crawlers)
         domains = set()
         for url in crawl_urls:
             parsed = urlparse(url)
             host = parsed.hostname or url.replace("https://","").replace("http://","").split("/")[0].split(":")[0]
-            domains.add(host)
+            if host_in_scope(host, self.domain):
+                domains.add(host)
         write_lines(self.d_content / "domains.txt", domains)
         
         # Stage 1: crawlers in parallel
@@ -1117,7 +1353,7 @@ class ReconPipeline:
                     "-rl", str(self.cfg["rate_limit"]),
                     "-ef", "png,jpg,jpeg,gif,svg,woff,woff2,css,ico,pdf,mp4,mp3",
                     "-jc",
-                    "-fs", "domain",
+                    "-fs", "rdn",
                     "-o", str(katana_file)
                 ])
         
@@ -1153,16 +1389,11 @@ class ReconPipeline:
         
         def run_urlfinder():
             if tool_available("urlfinder"):
-                run_tool("urlfinder", [
-                    "urlfinder",
-                    "-d", str(self.d_content / "domains.txt"),
-                    "-all",
-                    "-rl", "30",
-                    "-timeout", "30",
-                    "-max-time", "10",
-                    "-silent",
-                    "-o", str(urlfinder_file)
-                ])
+                urlfinder_domains = read_lines(self.d_content / "domains.txt")
+                if urlfinder_domains:
+                    run_tool("urlfinder", build_urlfinder_cmd(urlfinder_domains, urlfinder_file))
+                else:
+                    CONFIG.logger.debug("urlfinder skipped: domains.txt is empty")
         
         with ThreadPoolExecutor(max_workers=4) as pool:
             fs = [
@@ -1172,6 +1403,14 @@ class ReconPipeline:
                 pool.submit(run_urlfinder),
             ]
             wait(fs)
+        
+        # Per-tool counts — pinpoints silent crawler failures instantly
+        CONFIG.logger.info(
+            f"Crawlers: katana={safe_count(katana_file)} "
+            f"gauplus={safe_count(gaup_file)} "
+            f"subjs={safe_count(subjs_file)} "
+            f"urlfinder={safe_count(urlfinder_file)}"
+        )
         
         # Stage 2: JS processing from subjs output
         priority_file = self.d_content / "priority_urls.txt"
@@ -1222,7 +1461,8 @@ class ReconPipeline:
                         continue
                     # Remove fragments
                     line = line.split("#")[0]
-                    if line:
+                    # Scope filter: only target domain + its subdomains.
+                    if line and url_in_scope(line, self.domain):
                         all_url_set.add(line)
         
         write_lines(raw_urls, all_url_set)
@@ -1399,9 +1639,20 @@ class ReconPipeline:
                     "-oT", str(p_dir / "from_arjun.txt")
                 ])
         
+        # Step 3b: fallparams (all live URLs across domains + subdomains)
+        if tool_available("fallparams") and self.f_live_urls.exists():
+            fallparams_targets = read_lines(self.f_live_urls)
+            if fallparams_targets:
+                fallparams_file = p_dir / "from_fallparams.txt"
+                fallparams_input = p_dir / "fallparams_targets.txt"
+                write_lines(fallparams_input, fallparams_targets)
+                run_tool("fallparams", build_fallparams_cmd(
+                    fallparams_input, fallparams_file, self.cfg["threads"]
+                ))
+        
         # Step 4: merge all params
         all_params = set()
-        for fname in ["from_urls.txt", "from_js.txt", "from_arjun.txt"]:
+        for fname in ["from_urls.txt", "from_js.txt", "from_arjun.txt", "from_fallparams.txt"]:
             fp = p_dir / fname
             if fp.exists():
                 for line in read_lines(fp):
@@ -2100,7 +2351,8 @@ def _manual_update_hint(name: str) -> str:
         "httpx":        "go install -v github.com/projectdiscovery/httpx/cmd/httpx@latest",
         "nuclei":       "go install -v github.com/projectdiscovery/nuclei/v3/cmd/nuclei@latest",
         "naabu":        "go install -v github.com/projectdiscovery/naabu/v2/cmd/naabu@latest",
-        "chaos":        "go install -v github.com/projectdiscovery/chaos-client/cmd/chaos@latest",
+        "assetfinder":  "go install -v github.com/tomnomnom/assetfinder@latest",
+        "fallparams":   "go install -v github.com/ImAyrix/fallparams@latest",
         "shuffledns":   "go install -v github.com/projectdiscovery/shuffledns/cmd/shuffledns@latest",
         "katana":       "go install -v github.com/projectdiscovery/katana/cmd/katana@latest",
     }

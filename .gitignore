@@ -23,7 +23,6 @@ outputs/
 # Environment / secrets
 .env
 .env.*
-chaos-config.yaml  # may contain API keys
 
 # OS
 .DS_Store
