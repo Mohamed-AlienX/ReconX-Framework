@@ -117,6 +117,23 @@ def test_read_lines_missing(tmp_path):
     assert read_lines(tmp_path / "missing.txt") == []
 
 
+def test_read_lines_latin1_byte_no_crash(tmp_path):
+    f = tmp_path / "latin1.txt"
+    f.write_bytes(b"https://x?a=value\x93\nnext-line\n")
+    lines = read_lines(f)
+    assert len(lines) == 2
+    assert lines[1] == "next-line"
+    assert "\ufffd" in lines[0]  # bad byte replaced, not fatal
+
+
+def test_read_lines_binary_bytes_no_crash(tmp_path):
+    f = tmp_path / "bin.txt"
+    f.write_bytes(b"https://a?x=\xff\xfe\nclean\n")
+    lines = read_lines(f)
+    assert lines[1] == "clean"
+    assert lines[0].startswith("https://a?x=")
+
+
 def test_append_line(tmp_path):
     f = tmp_path / "append.txt"
     append_line(f, "first")

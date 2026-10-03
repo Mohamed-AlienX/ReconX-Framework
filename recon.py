@@ -287,8 +287,11 @@ def write_lines(path: Path, lines):
 def read_lines(path: Path) -> List[str]:
     if not path.exists():
         return []
-    with open(path) as f:
-        return [line.strip() for line in f if line.strip()]
+    with open(path, "rb") as f:
+        raw = f.read()
+    # Tolerant decode: tool outputs may contain non-UTF-8 bytes (e.g. CP1252).
+    text = raw.decode("utf-8", errors="replace")
+    return [line.strip() for line in text.splitlines() if line.strip()]
 
 def append_line(path: Path, line: str):
     path.parent.mkdir(parents=True, exist_ok=True)
@@ -514,7 +517,7 @@ def get_tool_version(tool: Tool) -> str:
     try:
         result = subprocess.run(
             tool.version_cmd,
-            capture_output=True, text=True, timeout=10
+            capture_output=True, text=True, errors="replace", timeout=10
         )
         output = (result.stdout + "\n" + result.stderr).strip()
         if not output:
@@ -586,6 +589,7 @@ def run_tool(
             timeout=timeout,
             cwd=str(cwd) if cwd else None,
             text=True,
+            errors="replace",
         )
         return result
     except subprocess.TimeoutExpired:
@@ -1009,7 +1013,7 @@ class ReconPipeline:
                     if open_tcp_json.exists() and tool_available("jq"):
                         result = subprocess.run(
                             ["jq", "-r", r'"\(.host):\(.port)"', str(open_tcp_json)],
-                    capture_output=True, text=True, timeout=600
+                    capture_output=True, text=True, errors="replace", timeout=600
                         )
                         if result.stdout:
                             write_lines(open_tcp_file, result.stdout.strip().split("\n"))
@@ -1104,7 +1108,7 @@ class ReconPipeline:
                 write_lines(deep_input, deep_targets)
                 result = subprocess.run(
                     ["dnsx", "-l", str(deep_input), "-resp-only", "-silent"],
-                    capture_output=True, text=True, timeout=600
+                    capture_output=True, text=True, errors="replace", timeout=600
                 )
                 resolved = [host.strip() for host in result.stdout.strip().split("\n") if host.strip()]
                 if resolved:
@@ -1364,7 +1368,7 @@ class ReconPipeline:
                         content = f.read()
                     result = subprocess.run(
                         ["gauplus", "-blacklist", "png,jpg,gif,svg,woff,woff2,css,ico,pdf"],
-                        input=content, capture_output=True, text=True, timeout=300
+                        input=content, capture_output=True, text=True, errors="replace", timeout=300
                     )
                     if result.stdout:
                         write_lines(gaup_file, result.stdout.strip().split("\n"))
@@ -1378,7 +1382,7 @@ class ReconPipeline:
                 try:
                     result = subprocess.run(
                         ["subjs", "-i", str(crawl_list), "-concurrency", "50"],
-                        capture_output=True, text=True, timeout=600
+                        capture_output=True, text=True, errors="replace", timeout=600
                     )
                     if result.stdout:
                         write_lines(subjs_file, result.stdout.strip().split("\n"))
@@ -1472,7 +1476,7 @@ class ReconPipeline:
             result = subprocess.run(
                 ["uro"],
                 input="\n".join(all_url_set),
-                capture_output=True, text=True, timeout=600
+                capture_output=True, text=True, errors="replace", timeout=600
             )
             if result.stdout:
                 write_lines(all_urls, result.stdout.strip().split("\n"))
@@ -1622,7 +1626,7 @@ class ReconPipeline:
                 if js_file.is_file() and js_file.stat().st_size > 0:
                     result = subprocess.run(
                         ["xnLinkFinder", "-i", str(js_file), "-o", "cli"],
-                        capture_output=True, text=True, timeout=60
+                        capture_output=True, text=True, errors="replace", timeout=60
                     )
                     for m in re.finditer(r'[?&]([a-zA-Z0-9_.\[\]-]{1,50})=', result.stdout):
                         js_params.add(m.group(1))
@@ -1723,7 +1727,7 @@ class ReconPipeline:
                 result = subprocess.run(
                     ["qsreplace", "FUZZ"],
                     input="\n".join(live_param_urls),
-                    capture_output=True, text=True, timeout=600
+                    capture_output=True, text=True, errors="replace", timeout=600
                 )
                 if result.stdout:
                     fuzz_urls = list(dict.fromkeys(result.stdout.strip().split("\n")))
@@ -1743,7 +1747,7 @@ class ReconPipeline:
                 try:
                     result = subprocess.run(
                         ["gf", pattern, str(p_dir / "all_live.txt")],
-                        capture_output=True, text=True, timeout=600
+                        capture_output=True, text=True, errors="replace", timeout=600
                     )
                     if result.stdout:
                         lines = list(dict.fromkeys(result.stdout.strip().split("\n")))
@@ -2383,7 +2387,7 @@ def cmd_update():
             before = get_tool_version(tool)
             result = subprocess.run(
                 tool.update_cmd,
-                capture_output=True, text=True, timeout=120
+                capture_output=True, text=True, errors="replace", timeout=120
             )
             after = get_tool_version(tool)
             if before != after:
@@ -2417,7 +2421,7 @@ def cmd_update():
         try:
             result = subprocess.run(
                 ["nuclei", "-update-templates"],
-                capture_output=True, text=True, timeout=120
+                capture_output=True, text=True, errors="replace", timeout=120
             )
             if result.returncode == 0:
                 print("\033[1;32mupdated\033[0m")
