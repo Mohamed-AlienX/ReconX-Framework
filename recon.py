@@ -27,7 +27,7 @@ import time
 import ssl
 import urllib.error
 import urllib.request
-from concurrent.futures import ThreadPoolExecutor, wait
+from concurrent.futures import ThreadPoolExecutor, as_completed, wait
 from dataclasses import dataclass, field
 from datetime import datetime
 from pathlib import Path
@@ -610,6 +610,30 @@ def run_tool(
 
 def tool_available(name: str) -> bool:
     return which(name) is not None
+
+
+def build_katana_cmd(crawl_list: Path, output: Path, depth: int, rate_limit: int) -> List[str]:
+    """Build a katana crawl command (fields are filled in by the pipeline)."""
+    return [
+        "katana", "-silent",
+        "-list", str(crawl_list),
+        "-d", str(depth),
+        "-rl", str(rate_limit),
+        "-ef", "png,jpg,jpeg,gif,svg,woff,woff2,css,ico,pdf,mp4,mp3",
+        "-jc",
+        "-fs", "rdn",
+        "-o", str(output),
+    ]
+
+
+def build_gauplus_cmd() -> List[str]:
+    """Build a gauplus command. Targets are fed through stdin (see _phase5)."""
+    return ["gauplus", "-b", "png,jpg,gif,svg,woff,woff2,css,ico,pdf"]
+
+
+def build_subjs_cmd(crawl_list: Path, concurrency: int = 50) -> List[str]:
+    """Build a subjs command. NOTE: the flag is -c, not -concurrency."""
+    return ["subjs", "-i", str(crawl_list), "-c", str(concurrency)]
 
 
 def build_urlfinder_cmd(domains: List[str], output: Path) -> List[str]:
@@ -1341,72 +1365,100 @@ class ReconPipeline:
         
         # Stage 1: crawlers in parallel
         CONFIG.logger.info("Stage 1: crawling (katana, gauplus, subjs, urlfinder)...")
-        
+
         katana_file = self.d_content / "katana.txt"
         gaup_file = self.d_content / "gaup.txt"
         subjs_file = self.d_content / "subjs.txt"
         urlfinder_file = self.d_content / "urlfinder.txt"
         crawl_list = self.d_live / "crawl_urls.txt"
-        
+
+        # Surface missing binaries up front — otherwise a broken install looks
+        # like "the crawler just produced nothing".
+        crawler_tools = ["katana", "gauplus", "subjs", "urlfinder"]
+        availability = {t: tool_available(t) for t in crawler_tools}
+        CONFIG.logger.info(
+            "Crawler availability: "
+            + " ".join(f"{t}={'yes' if ok else 'no'}" for t, ok in availability.items())
+        )
+        missing = [t for t, ok in availability.items() if not ok]
+        if missing:
+            CONFIG.logger.warn(f"Missing crawlers (skipped): {', '.join(missing)} — run ./install.sh")
+
         def run_katana():
-            if tool_available("katana"):
-                run_tool("katana", [
-                    "katana", "-silent",
-                    "-list", str(crawl_list),
-                    "-d", str(self.cfg["katana_depth"]),
-                    "-rl", str(self.cfg["rate_limit"]),
-                    "-ef", "png,jpg,jpeg,gif,svg,woff,woff2,css,ico,pdf,mp4,mp3",
-                    "-jc",
-                    "-fs", "rdn",
-                    "-o", str(katana_file)
-                ])
-        
+            if not availability["katana"]:
+                return
+            result = run_tool(
+                "katana",
+                build_katana_cmd(crawl_list, katana_file, self.cfg["katana_depth"], self.cfg["rate_limit"]),
+            )
+            if result is not None and result.returncode != 0:
+                CONFIG.logger.warn(f"katana exited {result.returncode} — see logs/tools/katana.log")
+
         def run_gauplus():
-            if tool_available("gauplus"):
-                try:
-                    with open(self.d_content / "domains.txt") as f:
-                        content = f.read()
-                    result = subprocess.run(
-                        ["gauplus", "-blacklist", "png,jpg,gif,svg,woff,woff2,css,ico,pdf"],
-                        input=content, capture_output=True, text=True, errors="replace", timeout=300
+            if not availability["gauplus"]:
+                return
+            try:
+                content = "\n".join(read_lines(self.d_content / "domains.txt"))
+                result = subprocess.run(
+                    build_gauplus_cmd(),
+                    input=content, capture_output=True, text=True, errors="replace", timeout=300
+                )
+                if result.returncode != 0:
+                    CONFIG.logger.warn(
+                        f"gauplus exited {result.returncode}: {result.stderr.strip()[:200]}"
                     )
-                    if result.stdout:
-                        write_lines(gaup_file, result.stdout.strip().split("\n"))
-                except subprocess.TimeoutExpired:
-                    CONFIG.logger.debug("gauplus timed out")
-                except Exception as e:
-                    CONFIG.logger.debug(f"gauplus failed: {type(e).__name__}")
-        
+                if result.stdout:
+                    write_lines(gaup_file, result.stdout.strip().split("\n"))
+            except subprocess.TimeoutExpired:
+                CONFIG.logger.warn("gauplus timed out")
+            except Exception as e:
+                CONFIG.logger.warn(f"gauplus failed: {type(e).__name__}: {e}")
+
         def run_subjs():
-            if tool_available("subjs"):
-                try:
-                    result = subprocess.run(
-                        ["subjs", "-i", str(crawl_list), "-concurrency", "50"],
-                        capture_output=True, text=True, errors="replace", timeout=600
+            if not availability["subjs"]:
+                return
+            try:
+                result = subprocess.run(
+                    build_subjs_cmd(crawl_list),
+                    capture_output=True, text=True, errors="replace", timeout=600
+                )
+                if result.returncode != 0:
+                    CONFIG.logger.warn(
+                        f"subjs exited {result.returncode}: {result.stderr.strip()[:200]}"
                     )
-                    if result.stdout:
-                        write_lines(subjs_file, result.stdout.strip().split("\n"))
-                except subprocess.TimeoutExpired:
-                    CONFIG.logger.debug("subjs timed out")
-                except Exception as e:
-                    CONFIG.logger.debug(f"subjs failed: {type(e).__name__}")
-        
+                if result.stdout:
+                    write_lines(subjs_file, result.stdout.strip().split("\n"))
+            except subprocess.TimeoutExpired:
+                CONFIG.logger.warn("subjs timed out")
+            except Exception as e:
+                CONFIG.logger.warn(f"subjs failed: {type(e).__name__}: {e}")
+
         def run_urlfinder():
-            if tool_available("urlfinder"):
-                urlfinder_domains = read_lines(self.d_content / "domains.txt")
-                if urlfinder_domains:
-                    run_tool("urlfinder", build_urlfinder_cmd(urlfinder_domains, urlfinder_file))
-                else:
-                    CONFIG.logger.debug("urlfinder skipped: domains.txt is empty")
-        
+            if not availability["urlfinder"]:
+                return
+            urlfinder_domains = read_lines(self.d_content / "domains.txt")
+            if urlfinder_domains:
+                result = run_tool("urlfinder", build_urlfinder_cmd(urlfinder_domains, urlfinder_file))
+                if result is not None and result.returncode != 0:
+                    CONFIG.logger.warn(
+                        f"urlfinder exited {result.returncode} — see logs/tools/urlfinder.log"
+                    )
+            else:
+                CONFIG.logger.warn("urlfinder skipped: domains.txt is empty")
+
         with ThreadPoolExecutor(max_workers=4) as pool:
-            fs = [
-                pool.submit(run_katana),
-                pool.submit(run_gauplus),
-                pool.submit(run_subjs),
-                pool.submit(run_urlfinder),
-            ]
-            wait(fs)
+            crawler_futures = {
+                pool.submit(run_katana): "katana",
+                pool.submit(run_gauplus): "gauplus",
+                pool.submit(run_subjs): "subjs",
+                pool.submit(run_urlfinder): "urlfinder",
+            }
+            for future in as_completed(crawler_futures):
+                name = crawler_futures[future]
+                try:
+                    future.result()
+                except Exception as e:
+                    CONFIG.logger.warn(f"{name} crawler crashed: {type(e).__name__}: {e}")
         
         # Per-tool counts — pinpoints silent crawler failures instantly
         CONFIG.logger.info(

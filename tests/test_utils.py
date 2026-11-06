@@ -39,6 +39,9 @@ from recon import (
     _parse_wayback_json,
     passive_fallback,
     build_urlfinder_cmd,
+    build_katana_cmd,
+    build_gauplus_cmd,
+    build_subjs_cmd,
     build_fallparams_cmd,
 )
 
@@ -749,6 +752,38 @@ def test_build_urlfinder_cmd_skips_blanks(tmp_path):
     cmd = build_urlfinder_cmd([" a.example.com ", "", "  "], tmp_path / "o.txt")
     d_values = [cmd[i + 1] for i, v in enumerate(cmd) if v == "-d"]
     assert d_values == ["a.example.com"]
+
+
+# ── Phase 5: katana / gauplus / subjs command builders ────────────────
+
+def test_build_katana_cmd_flags(tmp_path):
+    crawl = tmp_path / "crawl_urls.txt"
+    out = tmp_path / "katana.txt"
+    cmd = build_katana_cmd(crawl, out, depth=7, rate_limit=20)
+    assert cmd[0] == "katana"
+    assert "-list" in cmd and str(crawl) in cmd
+    assert "-d" in cmd and "7" in cmd
+    assert "-rl" in cmd and "20" in cmd
+    assert "-fs" in cmd and "rdn" in cmd
+    assert "-o" in cmd and str(out) in cmd
+
+
+def test_build_gauplus_cmd_uses_b_not_blacklist():
+    """gauplus has no -blacklist flag; -b is the real one."""
+    cmd = build_gauplus_cmd()
+    assert cmd[0] == "gauplus"
+    assert "-blacklist" not in cmd
+    assert "-b" in cmd
+
+
+def test_build_subjs_cmd_uses_c_not_concurrency(tmp_path):
+    """subjs has no -concurrency flag; -c is the real one."""
+    crawl = tmp_path / "crawl_urls.txt"
+    cmd = build_subjs_cmd(crawl, concurrency=50)
+    assert cmd[0] == "subjs"
+    assert "-concurrency" not in cmd
+    assert "-c" in cmd and "50" in cmd
+    assert "-i" in cmd and str(crawl) in cmd
 
 
 # ── Phase 6: fallparams command builder ───────────────────────────────
